@@ -41,7 +41,6 @@ const SUPPORTED_CONTENT_TYPES = [
   "application/javascript",
   "image/png",
 ];
-
 const SUPPORTED_HTTP_METHODS = ["GET", "POST", "OPTIONS"];
 
 const logger = createLogger(IS_VERBOSE, IS_LOGGING_ENABLED);
@@ -89,57 +88,56 @@ const server = createServer((request, response) => {
       logger(err);
     })
     .on("data", (chunk) => {
-      console.log("inside data");
-      body.push(chunk);
+      logger("Received body of request.");
+      logger(`Begin to form response for ${method} request`);
+      try {
+        body.push(chunk);
+        if (method === "GET") {
+          response.writeHead(200);
+          response.end();
+        } else if (method === "POST") {
+          response.writeHead(201);
+          response.end();
+        } else if (method === "OPTIONS") {
+          response.writeHead(200, {
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Methods": `${SUPPORTED_HTTP_METHODS.join(
+              ", "
+            )}`,
+            Allow: `${SUPPORTED_HTTP_METHODS.join(", ")}`,
+            Server: "nodejs",
+          });
+
+          response.end(
+            `Status code: 200\nAllow: ${SUPPORTED_HTTP_METHODS.join(", ")}`
+          );
+
+          logger(`Successfully handled ${method} request.`);
+        } else {
+          logger(
+            `Received unsupported method ${method}. Forming error response to client.`
+          );
+
+          response.writeHead(405, {
+            Allow: `${SUPPORTED_HTTP_METHODS.join(", ")}`,
+            "Content-Type": `${SUPPORTED_CONTENT_TYPES.join(", ")}`,
+            "Cache-Control": "no-cache",
+          });
+          response.end("Method not allowed");
+          logger(`Successfully handled unsupported request ${method} method.`);
+        }
+      } catch (err) {
+        response.writeHead(500);
+        console.log(err);
+        response.end("Internal server error");
+        logger(
+          `Something went wrong during execution on server, while processing ${method} request method.`
+        );
+      }
     })
     .on("end", () => {
-      logger('hit the end');
+      logger("Ended the request. Send the response to server.");
     });
-
-  logger(`Begin to form response for ${method} request`);
-  try {
-    if (method === "GET") {
-      response.writeHead(200);
-      response.end();
-    } else if (method === "POST") {
-      response.writeHead(201);
-      response.end();
-    } else if (method === "OPTIONS") {
-      response.writeHead(200, {
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": `${SUPPORTED_HTTP_METHODS.join(
-          ", "
-        )}`,
-        Allow: `${SUPPORTED_HTTP_METHODS.join(", ")}`,
-        Server: "nodejs",
-      });
-
-      response.end(
-        `Status code: 200\nAllow: ${SUPPORTED_HTTP_METHODS.join(", ")}`
-      );
-
-      logger(`Successfully handled ${method} request.`);
-    } else {
-      logger(
-        `Received unsupported method ${method}. Forming error response to client.`
-      );
-
-      response.writeHead(405, {
-        Allow: `${SUPPORTED_HTTP_METHODS.join(", ")}`,
-        "Content-Type": `${SUPPORTED_CONTENT_TYPES.join(", ")}`,
-        "Cache-Control": "no-cache",
-      });
-      response.end("Method not allowed");
-      logger(`Successfully handled unsupported request ${method} method.`);
-    }
-  } catch (err) {
-    response.writeHead(500);
-    console.log(err);
-    response.end("Internal server error");
-    logger(
-      `Something went wrong during execution on server, while processing ${method} request method.`
-    );
-  }
 });
 
 server.listen(PORT, HOST, () => {
