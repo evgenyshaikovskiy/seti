@@ -1,6 +1,8 @@
 import { ServerResponse, createServer } from "http";
 import yargs from "yargs";
 import { createLogger } from "./utils/logger.js";
+import { determineContentType } from "./utils/utils.js";
+import fs from "fs";
 
 const argv = yargs(process.argv.slice(2))
   .command("verbose", true, (yargs) => {
@@ -62,23 +64,134 @@ const server = createServer((request, response) => {
               From: ${headers["from"]}`
   );
 
-  logger("Checking whether content-type header in request is correct...");
-  // check, whether content-type header is correct
-  let isContentTypeHeaderCorrect = headers["content-type"]
-    ? SUPPORTED_CONTENT_TYPES.includes(headers["content-type"].toLowerCase())
-    : false;
-  if (isContentTypeHeaderCorrect) {
+  // no use to check content type if method is get
+  if (method === "POST" || method === "GET") {
+    logger("Checking whether content-type header in request is correct...");
+    // check, whether content-type header is correct
+    let isContentTypeHeaderCorrect = headers["content-type"]
+      ? SUPPORTED_CONTENT_TYPES.includes(headers["content-type"].toLowerCase())
+      : false;
+    if (isContentTypeHeaderCorrect) {
+      logger(
+        `Content type ${headers["content-type"]} is supported. Continue to process request.`
+      );
+    } else {
+      if (method !== "GET" && headers["content-type"]) {
+        logger(
+          `Content type is  ${headers["content-type"]} is not supported. Sending 406 status code.`
+        );
+        response.writeHead(406, "Not acceptable");
+        response.end(
+          `${
+            headers["content-type"]
+          } is not acceptable. Try one of following: ${SUPPORTED_CONTENT_TYPES.join(
+            ", "
+          )}.`
+        );
+      } else {
+        logger(
+          "Content type for GET request is not specified and expected. Continue to process request."
+        );
+      }
+    }
+  }
+
+  logger(`Begin to form response for ${method} request`);
+  // flow without body
+  try {
+    if (method === "GET") {
+      const [command, filePath] = url.split("=");
+      logger(
+        "Parsing GET request url, checking whether resource that was requested is exists."
+      );
+
+      if (
+        command &&
+        filePath &&
+        command === "/?filePath" &&
+        fs.existsSync(`./files/${filePath}`)
+      ) {
+        logger(
+          "Url was correct and resource exists. Determining Content-Type of resource."
+        );
+        const [_, fileExtension] = filePath.split(".");
+
+        const fullFilePath = `./files/${filePath}`;
+
+        // if header already included oc
+        const responseContentType = headers["content-type"]
+          ? headers["content-type"]
+          : determineContentType(fileExtension);
+
+        if (
+          responseContentType === "text/html" ||
+          responseContentType === "text/css" ||
+          responseContentType === "text/plain" ||
+          responseContentType === "application/javascript" ||
+          responseContentType === "image/svg+xml" ||
+          responseContentType === "image/png"
+        ) {
+          logger(
+            "Reading either html/css/plaintext/xml/svg/png or javascript file..."
+          );
+          const dataEncoded = fs.readFileSync(fullFilePath, "utf-8");
+          logger("Writing headers to response...");
+          response.writeHead(200, {
+            "Content-Type": `${responseContentType}; charset=utf-8`,
+            "Content-Length": Buffer.byteLength(dataEncoded),
+          });
+          logger("Sending data to client...");
+          response.end(dataEncoded);
+        } else if (responseContentType === "application/json") {
+          logger("Parsing and encoding source server json file...");
+          const jsonEncoded = JSON.parse(
+            fs.readFileSync(fullFilePath, "utf-8")
+          );
+          logger("Writing headers to response...");
+          response.writeHead(200, {
+            "Content-Type": `${responseContentType}; charset=utf-8`,
+            "Content-Length": Buffer.byteLength(JSON.stringify(jsonEncoded)),
+          });
+          response.end(JSON.stringify(jsonEncoded));
+        }
+      } else {
+        logger(
+          "Resource request tried to reach is not accessible, returning the 404 response code."
+        );
+        response.writeHead(404);
+        response.end("Resource you trying to reach is not accessible.");
+      }
+    } else if (method === "OPTIONS") {
+      response.writeHead(200, {
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": `${SUPPORTED_HTTP_METHODS.join(", ")}`,
+        Allow: `${SUPPORTED_HTTP_METHODS.join(", ")}`,
+        Server: "nodejs",
+      });
+
+      response.end(
+        `Status code: 200\nAllow: ${SUPPORTED_HTTP_METHODS.join(", ")}`
+      );
+
+      logger(`Successfully handled ${method} request.`);
+    } else {
+      logger(
+        `Received unsupported method ${method}. Forming error response to client.`
+      );
+
+      response.writeHead(405, {
+        Allow: `${SUPPORTED_HTTP_METHODS.join(", ")}`,
+        "Content-Type": `${SUPPORTED_CONTENT_TYPES.join(", ")}`,
+        "Cache-Control": "no-cache",
+      });
+      response.end("Method not allowed");
+    }
+  } catch (err) {
+    response.writeHead(500);
+    console.log(err);
+    response.end("Internal server error");
     logger(
-      `Content type ${headers["content-type"]} is supported. Continue to process request.`
-    );
-  } else {
-    response.writeHead(406, "Not acceptable");
-    response.end(
-      `${
-        headers["content-type"]
-      } is not acceptable. Try one of following: ${SUPPORTED_CONTENT_TYPES.join(
-        ", "
-      )}.`
+      `Something went wrong during execution on server, while processing ${method} request method.`
     );
   }
 
@@ -88,43 +201,13 @@ const server = createServer((request, response) => {
       logger(err);
     })
     .on("data", (chunk) => {
+      // when body is passed, typically post request
       logger("Received body of request.");
-      logger(`Begin to form response for ${method} request`);
       try {
         body.push(chunk);
-        if (method === "GET") {
-          response.writeHead(200);
-          response.end();
-        } else if (method === "POST") {
+        if (method === "POST") {
           response.writeHead(201);
           response.end();
-        } else if (method === "OPTIONS") {
-          response.writeHead(200, {
-            "Access-Control-Allow-Headers": "Content-Type",
-            "Access-Control-Allow-Methods": `${SUPPORTED_HTTP_METHODS.join(
-              ", "
-            )}`,
-            Allow: `${SUPPORTED_HTTP_METHODS.join(", ")}`,
-            Server: "nodejs",
-          });
-
-          response.end(
-            `Status code: 200\nAllow: ${SUPPORTED_HTTP_METHODS.join(", ")}`
-          );
-
-          logger(`Successfully handled ${method} request.`);
-        } else {
-          logger(
-            `Received unsupported method ${method}. Forming error response to client.`
-          );
-
-          response.writeHead(405, {
-            Allow: `${SUPPORTED_HTTP_METHODS.join(", ")}`,
-            "Content-Type": `${SUPPORTED_CONTENT_TYPES.join(", ")}`,
-            "Cache-Control": "no-cache",
-          });
-          response.end("Method not allowed");
-          logger(`Successfully handled unsupported request ${method} method.`);
         }
       } catch (err) {
         response.writeHead(500);
