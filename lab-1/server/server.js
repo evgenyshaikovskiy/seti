@@ -174,7 +174,7 @@ const server = createServer((request, response) => {
       );
 
       logger(`Successfully handled ${method} request.`);
-    } else {
+    } else if (method !== "POST") {
       logger(
         `Received unsupported method ${method}. Forming error response to client.`
       );
@@ -206,8 +206,39 @@ const server = createServer((request, response) => {
       try {
         body.push(chunk);
         if (method === "POST") {
+          logger(
+            "Parsing information about file that client wants to post to server."
+          );
+          const [command, filePath] = url.split("=");
+          const [_, fileExtension] = filePath.split(".");
+          const fullFilePath = `./files/${filePath}`;
+          const directoryPath = fullFilePath.substring(
+            0,
+            fullFilePath.lastIndexOf("/") + 1
+          );
+
+          if (!determineContentType(fileExtension)) {
+            logger(
+              "Content that client wants to post on server is not acceptable"
+            );
+            response.writeHead(406);
+            response.end(
+              "Content that client wants to post on server is not acceptable"
+            );
+          }
+
+          logger("Checking if path that user wants to post to is exists.");
+          if (!fs.existsSync(directoryPath)) {
+            logger(
+              "Directory where user wants to post does not exist. Creating directory..."
+            );
+            fs.mkdirSync(directoryPath);
+          }
+
+          fs.writeFileSync(fullFilePath, chunk, { encoding: "utf8" });
+
           response.writeHead(201);
-          response.end();
+          response.end(chunk);
         }
       } catch (err) {
         response.writeHead(500);
@@ -219,7 +250,7 @@ const server = createServer((request, response) => {
       }
     })
     .on("end", () => {
-      logger("Ended the request. Send the response to server.");
+      logger("Ended the request. Send the response to client.");
     });
 });
 
