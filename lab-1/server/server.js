@@ -128,17 +128,26 @@ const server = createServer((request, response) => {
           responseContentType === "text/html" ||
           responseContentType === "text/css" ||
           responseContentType === "text/plain" ||
-          responseContentType === "application/javascript" ||
-          responseContentType === "image/svg+xml" ||
-          responseContentType === "image/png"
+          responseContentType === "application/javascript"
         ) {
-          logger(
-            "Reading either html/css/plaintext/xml/svg/png or javascript file..."
-          );
+          logger("Reading either html/css/plaintext or javascript file...");
           const dataEncoded = fs.readFileSync(fullFilePath, "utf-8");
           logger("Writing headers to response...");
           response.writeHead(200, {
             "Content-Type": `${responseContentType}; charset=utf-8`,
+            "Content-Length": Buffer.byteLength(dataEncoded),
+          });
+          logger("Sending data to client...");
+          response.end(dataEncoded);
+        } else if (
+          responseContentType === "image/svg+xml" ||
+          responseContentType === "image/png"
+        ) {
+          logger("Reading either svg, xml or png...");
+          const dataEncoded = fs.readFileSync(fullFilePath, "base64");
+          logger("Writing headers to response.");
+          response.writeHead(200, {
+            "Content-Type": `${responseContentType}`,
             "Content-Length": Buffer.byteLength(dataEncoded),
           });
           logger("Sending data to client...");

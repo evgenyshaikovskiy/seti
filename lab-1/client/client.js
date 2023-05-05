@@ -70,79 +70,149 @@ const argv = yargs(process.argv.slice(2))
   })
   .command("plainbody", true, (yargs) => {
     yargs.positional("plainbody-text", {
-      alias: "u",
+      alias: "p",
       describe: "Defines body of request.",
+      type: "string",
+    });
+  })
+  .command("filename_tosave", true, (yargs) => {
+    yargs.positional("filepath_tosave", {
+      alias: "j",
+      describe: "filename",
       type: "string",
     });
   })
   .help().argv;
 
-const METHOD = argv.m || argv.method;
-const URL = argv.u || argv.url;
-const TEMPLATE_PATH = argv.t || argv.template;
-const RESOURCE_PATH = argv.r || argv.resource;
-const TO_SAVE = argv.s || argv.tosave ? argv.s || argv.tosave : false;
-const TO_PRINT = argv.l || argv.toprint ? argv.l || argv.toprint : true;
-const CONTENT_TYPE = argv.q || argv.contenttype;
-const CONTENT_LENGTH = argv.w || argv.contentlength;
-const AUTHORIZATION = argv.a || argv.authorization;
-const PLAIN_BODY = argv.u || argv.plainbody;
+var METHOD = argv.m || argv.method;
+var URL = argv.u || argv.url;
+var TEMPLATE_PATH = argv.t || argv.template;
+var RESOURCE_PATH = argv.r || argv.resource;
+var TO_SAVE = argv.s || argv.tosave ? argv.s || argv.tosave : false;
+var TO_PRINT = argv.l || argv.toprint ? argv.l || argv.toprint : true;
+var CONTENT_TYPE = argv.q || argv.contenttype;
+var CONTENT_LENGTH = argv.w || argv.contentlength;
+var AUTHORIZATION = argv.a || argv.authorization;
+var PLAIN_BODY = argv.p || argv.plainbody;
+var FILENAME = argv.j || argv.filepath_tosave;
 
-if (!TEMPLATE_PATH && (!METHOD || !URL)) {
-  console.log("Not enough data to perform request.");
+function main() {
+  const HEADERS = form_headers_of_request(
+    CONTENT_TYPE,
+    CONTENT_LENGTH,
+    AUTHORIZATION
+  );
+
+  // add support for template requests...
+
+  // two flows: request from template and from command line
+  if (TEMPLATE_PATH) {
+    // template request flow
+    try {
+      const json = JSON.parse(fs.readFileSync(TEMPLATE_PATH));
+
+      tryToSendRequest(
+        json["url"],
+        json["method"],
+        json["body"],
+        json["headers"]
+      );
+    } catch (err) {
+      console.log(err);
+    }
+  } else if (RESOURCE_PATH) {
+    // retrieve body from resource, also determine content type headers
+    try {
+      const body = fs.readFileSync(RESOURCE_PATH, { encoding: "utf-8" });
+      tryToSendRequest(URL, METHOD, body, HEADERS);
+    } catch (err) {
+      console.log(err);
+    }
+  } else if (PLAIN_BODY) {
+    try {
+      tryToSendRequest(URL, METHOD, PLAIN_BODY, HEADERS);
+    } catch (err) {
+      console.log(err);
+    }
+  } else {
+    tryToSendRequest(URL, METHOD, undefined, HEADERS);
+  }
 }
 
-if (METHOD === "POST" && (!RESOURCE_PATH || !PLAIN_BODY)) {
-  console.log("Trying to post empty information on server. Denying request.");
-}
+// tryToSendRequest(URL, METHOD, PLAIN_BODY, HEADERS);
 
-const HEADERS = form_headers_of_request(
-  CONTENT_TYPE,
-  CONTENT_LENGTH,
-  AUTHORIZATION
-);
+async function tryToSendRequest(url, method, body, headers) {
+  if (!url || !method) {
+    console.log(
+      "Not enough data to perform request. Url or method is undefined."
+    );
+    return;
+  }
 
-// add headers to request
+  if (method === "POST" && !body) {
+    console.log("Trying to post empty information on server. Denying request.");
+    return;
+  }
+  // add headers to request
+  const ALL_HTTP_METHODS = [
+    "CONNECT",
+    "DELETE",
+    "GET",
+    "HEAD",
+    "OPTIONS",
+    "POST",
+    "PUT",
+    "TRACE",
+  ];
 
-const ALL_HTTP_METHODS = [
-  "CONNECT",
-  "DELETE",
-  "GET",
-  "HEAD",
-  "OPTIONS",
-  "POST",
-  "PUT",
-  "TRACE",
-];
+  if (!method || !ALL_HTTP_METHODS.includes(method)) {
+    console.log("Given method is not supported by HTTP protocol.");
+  }
 
-if (!METHOD || !ALL_HTTP_METHODS.includes(METHOD)) {
-  console.log("Given method is not supported by HTTP protocol.");
-}
-
-// add support for template requests...
-
-tryToSendRequest(URL, METHOD, PLAIN_BODY);
-
-async function tryToSendRequest(url, method, body) {
   try {
     let response = undefined;
-    if (body) {
+    if (!body) {
       response = await fetch(url, {
         method: method,
+        headers: headers,
       });
     } else {
       response = await fetch(url, {
         method: method,
+        headers: headers,
         body: body,
       });
     }
 
     const information = await response.text();
-    console.log(TO_SAVE);
+    const statusCode = response.status;
+    const message = response.statusText;
+
+    console.log(
+      `Request is finished with status code ${statusCode}.\nMessage: ${message}`
+    );
     if (TO_PRINT) {
       console.log(`Client received information: ${information}`);
-    } else if (TO_SAVE) {
-      fs.writeFileSync(`./saved/${url}-${method}`, information);
+    }
+
+    if (TO_SAVE && FILENAME) {
+      const [_, fileExtension] = FILENAME.split(".");
+      console.log(fileExtension);
+      if (
+        fileExtension === "png" ||
+        fileExtension === "xml" ||
+        fileExtension === "svg"
+      ) {
+        // const blob = await convertBase64ToImage(fileExtension);
+        fs.writeFileSync(`./saved/${FILENAME}`, information, {
+          flag: "w+",
+        });
+
+      } else {
+        fs.writeFileSync(`./saved/${FILENAME}`, information, {
+          flag: "w+",
+        });
+      }
     }
   } catch (err) {
     console.log(err);
@@ -163,3 +233,5 @@ function form_headers_of_request(content_type, content_length, authorization) {
 
   return headers;
 }
+
+main();
