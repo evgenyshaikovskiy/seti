@@ -21,6 +21,7 @@ const argv = yargs(process.argv.slice(2))
   })
   .command("port", true, (yargs) => {
     yargs.positional("port_number", {
+      alias: "p",
       describe: "Port number on which server is launched. By default is 8000.",
       type: "number",
     });
