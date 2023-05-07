@@ -71,7 +71,7 @@ const argv = yargs(process.argv.slice(2))
   .command("plainbody", true, (yargs) => {
     yargs.positional("plainbody-text", {
       alias: "p",
-      describe: "Defines body of request.",
+      describe: "Defines boplainbodydy of request.",
       type: "string",
     });
   })

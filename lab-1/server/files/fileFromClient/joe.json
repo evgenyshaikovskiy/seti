@@ -1,0 +1,8 @@
+{
+  "url": "http://localhost:4000?filePath=templatePath/fileFromTemplate.html",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "text/html"
+  },
+  "body": "<h1>HTML FROM TEMPLATE</h1>"
+}
